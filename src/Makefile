@@ -1,5 +1,5 @@
 CPP = clang++
-CPPFLAGS = -std=c++11 -pthread -lboost_system
+CPPFLAGS = -std=c++11 -pthread
 TARGET = ftphere
 
 all: ftphere.cc
