@@ -35,16 +35,65 @@ class FTPServer {
             acceptor_.bind(local_ep_);
             acceptor_.listen();
 
-            while (!ec) {
+            while (true) {
                 acceptor_.accept(remote_socket, ec);
                 HandleClient(remote_socket);
+                if (ec) {
+                    // to do
+                    Error(ec.what());
+                }
             }
         }
 
 
     private:
+        enum CMD { USER, PASS, PORT };
+
         void HandleClient(tcp::socket& socket) {
-            puts("a new comer");
+            LogClientAction(socket, "sign in");
+
+            boost::system::error_code ec;
+            streambuf buff;
+            std::istream is(&buff);
+            string line;
+
+            while (true) {
+                read_until(socket, buff, '\n', ec);
+                std::getline(is, line);
+                
+                try {
+                    auto cmd_args = ResolveCMD(line);
+                    Dispatch(tcp::socket& socket, cmd_args.first, cmd_args.second);
+                } catch (exception& e) {
+                    // to do
+                    Error(e.what());
+                    break;
+                }
+                if (ec) {
+                    // to do
+                    Error(ec.what());
+                }
+            }
+            socket.close();
+        }
+
+        std::pair<int, string>
+        ResovleCMD(const string& cmd) {
+            int delimit_index = cmd.find(' ');
+            if (delimit_index == string::npos) {
+                // to do
+                throw 
+            }
+        }
+
+        void LogClientAction(tcp::socket& socket, const char* msg) {
+            tcp::address address = socket.remote_endpoint().address();
+            string info = address.to_string() + ": " + msg;
+            logger_.Log(info, Logger::INFO);
+        }
+
+        void Error(const char* msg) {
+            logger_.Log(msg, Logger::ERROR);
         }
 
         const char* log_path_ = "./ftphere.log";
@@ -53,30 +102,5 @@ class FTPServer {
         io_service ios_;
         tcp::acceptor acceptor_;
         Logger logger_;
-};
-
-class Logger {
-    public:
-        Logger(const char* log_path):
-            log_path_(log_path) {
-            log_file_ = fopen(log_path_, "a+");
-        }
-
-        void Log(const string& message) {
-            Log(message.data());
-        }
-
-        void Log(const char* message) {
-            fprintf(log_file_, "%s:\t%s\n", Date(), message);
-        }
-
-    private:
-
-        const char* Date() {
-            return "shit";
-        }
-
-        char* log_path_;
-        FILE* log_file_;
 };
 }

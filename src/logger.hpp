@@ -34,7 +34,7 @@ class Logger {
                     Date().data(), 
                     level == INFO ? "INFO" : "ERROR",
                     msg);
-            fprintf(stderr, "%s %s %s\n", 
+            fprintf(stdout, "%s %s %s\n", 
                     Date().data(), 
                     level == INFO ? "INFO" : "ERROR",
                     msg);
