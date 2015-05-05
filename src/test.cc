@@ -1,9 +1,12 @@
 #include <iostream>
 #include <cstdio>
 #include <cassert>
+#include <string>
+#include <vector>
 
 #include "logger.hpp"
 #include "cmd.hpp"
+#include "util.hpp"
 
 using namespace ftp;
 
@@ -32,10 +35,21 @@ bool TestResponse() {
     puts("pass-test: response");
     return true;
 }
+
+bool TestSplit() {
+    std::string str = "USER anonymous";
+    std::vector<std::string> res = { "USER", "anonymous" };
+    auto splited = Split(str, ' ');
+    assert(res == splited);
+    puts("pass-test: split");
+    return true;
+}
+
 int main()
 {
     assert(TestLogger());
     assert(TestCMD());
     assert(TestResponse());
+    assert(TestSplit());
     return 0;
 }

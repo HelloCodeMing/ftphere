@@ -8,11 +8,22 @@
 
 #include <boost/asio.hpp>
 #include <iostream>
-#include <stdexcept>
+#include <exception>
+#include <unistd.h>
 
 #ifndef LOGGER_HPP
 #define LOGGER_HPP
 #include "logger.hpp"
+#endif
+
+#ifndef CMD_HPP
+#define CMD_HPP
+#include "cmd.hpp"
+#endif
+
+#ifndef UTIL_HPP
+#define UTIL_HPP
+#include "util.hpp"
 #endif
 
 namespace ftp {
@@ -30,7 +41,8 @@ class FTPServer {
             local_ep_(tcp::v4(), port_),
             ios_(),
             acceptor_(ios_),
-            logger_("./ftpserver.log"){
+            logger_("./ftpserver.log"),
+            getcwd(cwd_, 1024) {
             
         }
 
@@ -43,38 +55,27 @@ class FTPServer {
             tcp::socket remote_socket(ios_);
 
             /* init the acceptor */
-            acceptor_.open(tcp::v4());
-            acceptor_.bind(local_ep_);
-            acceptor_.listen();
+            try {
+                acceptor_.open(tcp::v4());
+                acceptor_.bind(local_ep_);
+                acceptor_.listen();
+            } catch (exception& e) {
+                Error(e.what());
+                exit(1);
+            }
 
             while (true) {
-                acceptor_.accept(remote_socket, ec);
-                HandleClient(remote_socket);
-                if (ec) {
-                    // to do
-                    Error(ec.message());
+                try {
+                    acceptor_.accept(remote_socket, ec);
+                    HandleClient(remote_socket);
+                } catch (exception& e) {
+                    Error(e.what());
                 }
             }
         }
 
 
     private:
-        enum CMD { USER, PASS, PORT };
-
-        std::pair<int, string>
-        ResolveCMD(const string& cmd) {
-            int delimit_index = cmd.find(' ');
-            if (delimit_index == string::npos) {
-                // to do
-                throw std::invalid_argument("bad cmd");
-            } else {
-            }
-        }
-
-        void Dispatch(tcp::socket& socket, int cmd, string args) {
-
-        }
-
         void HandleClient(tcp::socket& socket) {
             LogClientAction(socket, "sign in");
 
@@ -82,27 +83,49 @@ class FTPServer {
             streambuf buff;
             std::istream is(&buff);
             string line;
+            int endable = 0;
 
-            while (true) {
+            while (!endable) {
                 read_until(socket, buff, '\n', ec);
                 std::getline(is, line);
-                
-                try {
-                    auto cmd_args = ResolveCMD(line);
-                    Dispatch(socket, cmd_args.first, cmd_args.second);
-                } catch (exception& e) {
-                    // to do
-                    Error(e.what());
-                    break;
-                }
-                if (ec) {
-                    // to do
-                    Error(ec.message());
-                }
+
+                auto cmd_args = Split(line, ' ');
+                endable = Dispatch(socket, cmd_args);
             }
             socket.close();
         }
 
+        int Dispatch(tcp::socket& socket, std::vector<std::string>& cmd_args) {
+            CMD cmd_code = ResolveCMD(cmd_args[0]);
+            switch (cmd_code) {
+                /* normal cmd */
+                case CWD:
+                    
+                case HELP:
+                case LIST:
+                case MODE:
+                case NLST:
+                case NOOP:
+                case PORT:
+                case PASV:
+                case PASS:
+                case USER:
+                case PWD:
+                case RETR:
+                case STRU:
+                case TYPE:
+                
+                /* unsupported cmd */
+                case DELE:
+                case MKD:
+                case PORT:
+                case RMD:
+                case STOR:
+                    
+                /* illegal cmd */
+                default:
+            }
+        }
 
         void LogClientAction(tcp::socket& socket, const char* msg) {
             ip::address address = socket.remote_endpoint().address();
@@ -120,6 +143,7 @@ class FTPServer {
 
         const char* log_path_ = "./ftphere.log";
         unsigned short port_;
+        char cwd_[1024];
         tcp::endpoint local_ep_;
         io_service ios_;
         tcp::acceptor acceptor_;
