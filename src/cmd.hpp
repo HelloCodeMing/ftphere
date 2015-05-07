@@ -2,6 +2,8 @@
 
 #include <unordered_map>
 #include <cassert>
+#include <algorithm>
+#include <cctype>
 
 namespace ftp {
 
@@ -38,7 +40,9 @@ enum CMD {
 };
 
 CMD ResolveCMD(const std::string& cmd) {
-    assert(!cmd.empty());
+    std::string upper_cmd;
+    std::transform(cmd.begin(), cmd.end(), 
+                    std::back_inserter(upper_cmd), toupper);
     static std::unordered_map<std::string, CMD> cmd_table = {
         { "ABOR", ABOR },
         { "CWD",  CWD  },
@@ -62,8 +66,8 @@ CMD ResolveCMD(const std::string& cmd) {
         { "QUIT", QUIT },
         { "USER", USER },
     };
-    if (cmd_table.find(cmd) != cmd_table.end())
-        return cmd_table[cmd];
+    if (cmd_table.find(upper_cmd) != cmd_table.end())
+        return cmd_table[upper_cmd];
     return BAD;
 }
 

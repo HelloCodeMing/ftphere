@@ -25,19 +25,18 @@ class Logger {
             fclose(log_file_);
         }
     
-        void Log(const string& msg, Level level) {
-            Log(msg.data(), level);
-        }
 
-        void Log(const char* msg, Level level) {
+        void Log(const string& msg, Level level = Level::INFO) {
             fprintf(log_file_, "%s %s %s\n", 
                     Date().data(), 
                     level == INFO ? "INFO" : "ERROR",
-                    msg);
+                    msg.data());
+#ifndef NDEBUG
             fprintf(stdout, "%s %s %s\n", 
                     Date().data(), 
                     level == INFO ? "INFO" : "ERROR",
-                    msg);
+                    msg.data());
+#endif
         }
         
 

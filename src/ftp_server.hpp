@@ -6,11 +6,13 @@
 
 #define FTPSERVER_HPP
 
-#include <boost/asio.hpp>
 #include <iostream>
 #include <exception>
 #include <unistd.h>
 #include <string>
+
+#include <boost/asio.hpp>
+#include <boost/filesystem.hpp>
 
 #ifndef LOGGER_HPP
 #define LOGGER_HPP
@@ -30,28 +32,21 @@
 namespace ftp {
 
 using namespace boost::asio;
+using namespace boost::filesystem;
 using boost::asio::ip::tcp;
 using std::string;
 using std::exception;
 using boost::system::error_code;
 
+typedef unsigned short ushort;
+
 class FTPServer {
     public:
-        FTPServer(): 
-            port_(21),
-            data_port_(20),
-            local_ep_(tcp::v4(), port_),
-            ios_(),
-            acceptor_(ios_),
-            logger_("./ftpserver.log") {
-            getcwd(cwd_, 1024);
-        }
 
-        ~FTPServer() {
-
-        }
+        FTPServer(ushort ctl_port = 21, ushort data_port = 20): port_(ctl_port), data_port_(data_port) {}
 
         void Run() {
+            logger_.Log("The server starting.", Logger::INFO);
             error_code ec;
             tcp::socket remote_socket(ios_);
             tcp::endpoint data_ep(tcp::v4(), data_port_);
@@ -67,15 +62,19 @@ class FTPServer {
                 exit(1);
             }
 
+            logger_.Log("The server started.", Logger::INFO);
             while (true) {
                 try {
                     acceptor_.accept(remote_socket, ec);
                     HandleClient(remote_socket, data_socket);
+                    remote_socket.close();
+                    data_socket.close();
                 } catch (exception& e) {
                     Error(e.what());
                     remote_socket.close();
                 }
             }
+            logger_.Log("The server ended.", Logger::INFO);
         }
 
 
@@ -84,14 +83,15 @@ class FTPServer {
             LogClientAction(ctl_socket, "sign in");
 
             error_code ec;
-            streambuf buff;
-            std::istream is(&buff);
-            string line;
             int endable = 0;
 
-            while (!endable) {
-                read_until(socket, buff, '\n', ec);
-                std::getline(is, line);
+            while (!endable && ctl_socket.is_open()) {
+                streambuf buff;
+                std::istream is(&buff);
+                string line;
+
+                read_until(ctl_socket, buff, "\r\n", ec);
+                std::getline(is, line, '\r');
 
                 auto cmd_args = Split(line, ' ');
                 endable = Dispatch(ctl_socket, data_socket, cmd_args);
@@ -104,8 +104,7 @@ class FTPServer {
             switch (cmd_code) {
                 /* normal cmd */
                 case CWD: {
-                    // todo 
-                    strcat(cwd_, cmd_args[1].data());
+                    current_dir_ = cmd_args[1];
                     res = "250 Directory successfully changed.\r\n";
                     ctl_socket.write_some(buffer(res));
                     break;
@@ -153,25 +152,37 @@ class FTPServer {
                     break;
                            }
                 case PWD: {
-                    res = "257 ";
-                    res += cwd_;
+                    res += "257 ";
+                    res += current_dir_.string();
                     res += "\r\n";
                     ctl_socket.write_some(buffer(res));
                     break;
                           }
                 case RETR: {
-                    res = "150 Opening BINARY mode data connection for file.\r\n";
-                    ctl_socket.write_some(buffer(res));
-                    /* todo */
+                    //res = "150 Opening BINARY mode data connection for file.\r\n";
+                    //ctl_socket.write_some(buffer(res));
                     char buff[1024];
-                    FILE* file = fopen(cmd_args[1].data(), "r");
-                    size_t len;
-
-                    while ((len = fread(buff, 1024, 1, file))) {
-                        write(data_socket, buffer(buff, len));
+                    path file_path = root_dir_;
+                    file_path /= cmd_args[1];
+                    
+                    // exists or not?
+                    if (exists(file_path)) {
+                        res = "150 Opening BINARY mode data conenction for file.\r\n";
+                        ctl_socket.write_some(buffer(res));
+                        FILE* file = fopen(file_path.c_str(), "r");
+                        size_t len;
+                        size_t transfer_cnt(0);
+                        
+                        while ((len = fread(buff, 1024, 1, file))) {
+                            transfer_cnt += len;
+                            write(data_socket, buffer(buff, len));
+                        }
+                        fclose(file);
+                        res = "226 Transfer complete";
+                        res += string("(") + std::to_string(transfer_cnt) + "bytes transfered).\r\n";
+                    } else {
+                        res = "550 File not exists.\r\n";
                     }
-                    fclose(file);
-                    res = "226 Transfer complete.\r\n";
                     ctl_socket.write_some(buffer(res));
                     break;
                            }
@@ -235,21 +246,19 @@ class FTPServer {
             logger_.Log(info, Logger::INFO);
         }
 
-        void Error(const char* msg) {
-            logger_.Log(msg, Logger::ERROR);
-        }
 
         void Error(const string& msg) {
             logger_.Log(msg, Logger::ERROR);
         }
 
-        const char* log_path_ = "./ftphere.log";
-        unsigned short port_;
-        unsigned short data_port_;
-        char cwd_[1024];
-        tcp::endpoint local_ep_;
-        io_service ios_;
-        tcp::acceptor acceptor_;
-        Logger logger_;
+        const char* log_path_ = "./ftpd.log";
+        Logger logger_{ log_path_ };
+        const unsigned short port_;
+        const unsigned short data_port_;
+        const path root_dir_ = current_path();
+        path current_dir_ = "/";
+        tcp::endpoint local_ep_{ tcp::v4(), port_ };
+        io_service ios_{ };
+        tcp::acceptor acceptor_{ ios_ };
 };
 }
