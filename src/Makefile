@@ -1,6 +1,6 @@
 CPP = clang++
 DEBUGCPP = g++
-CPPFLAGS = -std=c++11 -pthread -lboost_system -lboost_filesystem
+CPPFLAGS = -std=c++14 -pthread -lboost_system -lboost_filesystem
 
 TARGET = ftphere
 

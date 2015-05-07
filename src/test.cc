@@ -21,12 +21,16 @@ int StatusCode(const string& response) {
 }
 
 void StartServer() {
-    std::thread server([=]() {
-            FTPServer s(8080, 8081);
-            s.Run();
-            });
-    server.detach();
-    sleep(1);
+    static bool started = false;
+    if (started == false) {
+        started = true;
+        std::thread server([=]() {
+                FTPServer s(8080, 8081);
+                s.Run();
+                });
+        server.detach();
+        sleep(1);
+    }
 }
 
 bool TestLogger() {
@@ -71,7 +75,8 @@ bool TestSplit() {
     return true;
 }
 
-bool TestSignin() {
+template<typename UnaryPred>
+void TestGeneric(const string& req, UnaryPred predicate) {    
     /* create server */
     StartServer();
 
@@ -84,48 +89,60 @@ bool TestSignin() {
     std::istream is(&buff);
     std::string line;
 
-    socket.write_some(buffer("USER ming\r\n"));
+    socket.write_some(buffer(req));
     read_until(socket, buff, "\r\n");
     std::getline(is, line, '\r');
-    assert(StatusCode(line) == 331);
+    predicate(line);
+}
+
+bool TestSignin() {
+    TestGeneric("USER ming\r\n", [](auto& res) {
+            assert(StatusCode(res) == 331);
+            });
     
-    socket.write_some(buffer("PASS shit\r\n"));
-    read_until(socket, buff, "\r\n");
-    std::getline(is, line, '\r');
-    assert(StatusCode(line) == 230);
+    TestGeneric("PASS shit\r\n", [](auto& res) {
+            assert(StatusCode(res) == 230);
+            });
     puts("pass-test: sign in");
     return true;
 }
 
 bool TestPWD() {
-    /* create server */
-    StartServer();
+    TestGeneric("PWD\r\n", [](auto& res) {
+            assert(StatusCode(res) == 257);
+            });
     
-    /* create client */
     puts("pass-test: pwd");
     return true;
 }
 
 bool TestCWD() {
+    TestGeneric("CWD /shit\r\n", [](auto& res) {
+            assert(StatusCode(res) == 250);
+            });
 
     puts("pass-test: cwd");
     return true;
 }
 
 bool TestPORT() {
-
+    /* port 1025 */
+    
+    TestGeneric("PORT 127,0,0,1,4,1\r\n", [](auto& res) {
+            assert(StatusCode(res) == 200);
+            });
     puts("pass-test: port");
     return true;
 }
 
 bool TestLIST() {
-
+    // todo
     puts("pass-test: list");
     return true;
 }
 
 bool TestRETR() {
-
+    // todo
     puts("pass-tes: retr");
     return true;
 }
@@ -138,6 +155,10 @@ int main()
     assert(TestSplit());
     assert(TestSignin());
     assert(TestPWD());
+    assert(TestCWD());
+    assert(TestPORT());
+    //assert(TestLIST());
+    //assert(TestRETR());
     puts("pass all test!");
     return 0;
 }
