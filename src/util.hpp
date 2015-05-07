@@ -4,7 +4,6 @@
 #include <vector>
 #include <cassert>
 #include <ctime>
-#include <iomanip>
 
 #include <boost/filesystem.hpp>
 
@@ -33,18 +32,20 @@ make_file_info(const path& path) {
     char buff[5];
     
     std::string file_name = path.filename().string();
-    time_t last_time = last_write_time(path);
+    char time_buff[24];
+    time_t time_tp = last_write_time(path);
+    strftime(time_buff, 24, "%Y-%m-%d %H:%M:%S", localtime(&time_tp));
     sprintf(buff, "%o", status(path).permissions());
 
     if (is_regular_file(path)) {
         int size = file_size(path);
         return std::string(buff) + " " +
                std::to_string(size) + " " +
-               std::put_time(std::localtime(&last_time), "%F %T") + " " +
+               time_buff + " " +
                file_name;
     }
     return std::string(buff) + " " +
-           ctime(&last_time) + " " +
+           time_buff + " " +
            file_name;
 }
 

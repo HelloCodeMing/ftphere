@@ -162,9 +162,24 @@ bool TestFileInfo() {
     puts("pass-test: file info");
     return true;
 }
+
 bool TestLIST() {
+    Request("PORT 127,0,0,1,4,1", [](auto& res){});
+    ip::tcp::endpoint ep(ip::tcp::v4(), 1025);
+    Receive(ep, [](auto& socket) {
+        boost::system::error_code ec;
+        while (!ec) {
+            streambuf buff;
+            std::istream is(&buff);
+            std::string line;
+            
+            read_until(socket, buff, "\r\n", ec);
+            std::getline(is, line, '\r');
+            std::cout << line << '\n';
+        }
+    });
     Request("LIST /\r\n", [](auto& res) {
-        // todo
+        assert(StatusCode(res) == 150);
     });
     puts("pass-test: list");
     return true;
@@ -187,7 +202,7 @@ int main()
     assert(TestCWD());
     assert(TestPORT());
     assert(TestFileInfo());
-    //assert(TestLIST());
+    assert(TestLIST());
     //assert(TestRETR());
     puts("pass all test!");
     return 0;
