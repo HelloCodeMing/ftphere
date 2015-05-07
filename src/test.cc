@@ -76,7 +76,7 @@ bool TestSplit() {
 }
 
 template<typename UnaryPred>
-void TestGeneric(const string& req, UnaryPred predicate) {    
+void Request(const string& req, UnaryPred predicate) {    
     /* create server */
     StartServer();
 
@@ -95,31 +95,46 @@ void TestGeneric(const string& req, UnaryPred predicate) {
     predicate(line);
 }
 
-bool TestSignin() {
-    TestGeneric("USER ming\r\n", [](auto& res) {
-            assert(StatusCode(res) == 331);
-            });
+template<typename Fn>
+void Receive(ip::tcp::endpoint& ep, Fn fn) {
+    StartServer();    
     
-    TestGeneric("PASS shit\r\n", [](auto& res) {
-            assert(StatusCode(res) == 230);
-            });
+    std::thread anon([&]() {
+        io_service ios;
+        ip::tcp::acceptor acceptor(ios, ep);
+        ip::tcp::socket socket(ios);
+        
+        acceptor.accept(socket);
+        fn(socket);
+    });
+    anon.detach();
+}
+
+bool TestSignin() {
+    Request("USER ming\r\n", [](auto& res) {
+        assert(StatusCode(res) == 331);
+    });
+    
+    Request("PASS shit\r\n", [](auto& res) {
+        assert(StatusCode(res) == 230);
+    });
     puts("pass-test: sign in");
     return true;
 }
 
 bool TestPWD() {
-    TestGeneric("PWD\r\n", [](auto& res) {
-            assert(StatusCode(res) == 257);
-            });
+    Request("PWD\r\n", [](auto& res) {
+        assert(StatusCode(res) == 257);
+    });
     
     puts("pass-test: pwd");
     return true;
 }
 
 bool TestCWD() {
-    TestGeneric("CWD /shit\r\n", [](auto& res) {
-            assert(StatusCode(res) == 250);
-            });
+    Request("CWD /shit\r\n", [](auto& res) {
+        assert(StatusCode(res) == 250);
+    });
 
     puts("pass-test: cwd");
     return true;
@@ -128,15 +143,29 @@ bool TestCWD() {
 bool TestPORT() {
     /* port 1025 */
     
-    TestGeneric("PORT 127,0,0,1,4,1\r\n", [](auto& res) {
-            assert(StatusCode(res) == 200);
-            });
+    Request("PORT 127,0,0,1,4,1\r\n", [](auto& res) {
+        assert(StatusCode(res) == 425);
+    });
+    ip::tcp::endpoint ep(ip::tcp::v4(), 1025);
+    Receive(ep, [](auto& socket) {
+        assert(socket.remote_endpoint().address().to_string() == "127.0.0.1");
+    });
+    Request("PORT 127,0,0,1,4,1\r\n", [](auto& res) {
+        assert(StatusCode(res) == 200);
+    });
     puts("pass-test: port");
     return true;
 }
 
+bool TestFileInfo() {
+    std::cout << make_file_info("/") << std::endl;
+    puts("pass-test: file info");
+    return true;
+}
 bool TestLIST() {
-    // todo
+    Request("LIST /\r\n", [](auto& res) {
+        // todo
+    });
     puts("pass-test: list");
     return true;
 }
@@ -157,6 +186,7 @@ int main()
     assert(TestPWD());
     assert(TestCWD());
     assert(TestPORT());
+    assert(TestFileInfo());
     //assert(TestLIST());
     //assert(TestRETR());
     puts("pass all test!");

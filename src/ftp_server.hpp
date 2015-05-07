@@ -119,7 +119,19 @@ class FTPServer {
                     break;
                            }
                 case LIST: {
-                    // todo
+                    if (data_socket.is_open()) {
+                        res = "150 Here comes the directory listing.\r\n";
+                        ctl_socket.write_some(buffer(res));
+                        std::for_each(directory_iterator(current_dir_),
+                                      directory_iterator(),
+                                      [&](auto& entry) {
+                                        data_socket.write_some(buffer(make_file_info(entry) + "\r\n"));
+                                      });
+                        res = "226 Directory send OK.\r\n";
+                    } else {
+                        res = "425 Use PORT or PASV first.\r\n";
+                    }
+                    ctl_socket.write_some(buffer(res));
                            }
                 case MODE:
                     // todo
@@ -201,6 +213,7 @@ class FTPServer {
                     break;
                            }
                 case PORT: {
+                    boost::system::error_code ec;
                     auto args = Split(cmd_args[1], ',');
                     string address;
                     for (int i = 0; i < 4; i++)
@@ -208,9 +221,13 @@ class FTPServer {
                     address.pop_back();
                     int port = stoi(args[4]) * 256 + stoi(args[5]);
                     tcp::endpoint ep(ip::address::from_string(address), port);
-                    data_socket.connect(ep);
+                    data_socket.connect(ep, ec);
 
-                    res = "200 PORT command successful.\r\n";
+                    if (ec) {
+                        res = "425 Can't open data connection.\r\n";
+                    } else {
+                        res = "200 PORT command successful.\r\n";
+                    }
                     ctl_socket.write_some(buffer(res));
                     break;
                            }
