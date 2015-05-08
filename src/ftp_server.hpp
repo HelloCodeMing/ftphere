@@ -97,7 +97,7 @@ class FTPServer {
             error_code ec;
             bool stat = true;
 
-            while (stat && ctl_socket.is_open()) {
+            while (stat && ctl_socket.is_open() && !ec) {
                 streambuf buff;
                 std::istream is(&buff);
                 string line;
@@ -106,6 +106,7 @@ class FTPServer {
                 std::getline(is, line, '\r');
 
                 auto cmd_args = Split(line, ' ');
+                LogClientAction(ctl_socket, line);
                 stat = Dispatch(ctl_socket, data_socket, cmd_args);
             }
         }
@@ -260,7 +261,7 @@ class FTPServer {
             
         }
 
-        void LogClientAction(tcp::socket& socket, const char* msg) {
+        void LogClientAction(tcp::socket& socket, const string& msg) {
             ip::address address = socket.remote_endpoint().address();
             string info = address.to_string() + ": " + msg;
             logger_.Log(info, Logger::INFO);

@@ -9,8 +9,11 @@
 #include <cstdio>
 #include <string>
 
+#include <boost/filesystem.hpp>
+
 namespace ftp {
 using std::string;
+using namespace boost::filesystem;
 
 class Logger {
     public:
@@ -19,6 +22,13 @@ class Logger {
         explicit Logger(const char* log_path) {
             log_path_ = log_path;
             log_file_ = fopen(log_path, "a+");
+            
+            /* chmod 644 */
+            path file_path(log_path);
+            permissions(file_path, owner_read |
+                                   owner_write|
+                                   group_read|
+                                   others_read);
         }
 
         ~Logger() {
