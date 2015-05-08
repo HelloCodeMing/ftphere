@@ -45,6 +45,13 @@ class FTPServer {
 
         FTPServer(ushort ctl_port = 21, ushort data_port = 20): port_(ctl_port), data_port_(data_port) {}
 
+        ~FTPServer() {
+            if (acceptor_.is_open()) 
+                acceptor_.close();
+            if (!ios_.stopped())
+                ios_.stop();
+        }
+
         void Run() {
             logger_.Log("The server starting.", Logger::INFO);
             error_code ec;
@@ -69,6 +76,7 @@ class FTPServer {
                     HandleClient(remote_socket, data_socket);
                     remote_socket.close();
                     data_socket.close();
+                    Reset();
                 } catch (exception& e) {
                     Error(e.what());
                     remote_socket.close();
@@ -79,13 +87,17 @@ class FTPServer {
 
 
     private:
+        void Reset() {
+            current_dir_ = "/";
+        }
+
         void HandleClient(tcp::socket& ctl_socket, tcp::socket& data_socket) {
             LogClientAction(ctl_socket, "sign in");
 
             error_code ec;
-            int endable = 0;
+            bool stat = true;
 
-            while (!endable && ctl_socket.is_open()) {
+            while (stat && ctl_socket.is_open()) {
                 streambuf buff;
                 std::istream is(&buff);
                 string line;
@@ -94,19 +106,20 @@ class FTPServer {
                 std::getline(is, line, '\r');
 
                 auto cmd_args = Split(line, ' ');
-                endable = Dispatch(ctl_socket, data_socket, cmd_args);
+                stat = Dispatch(ctl_socket, data_socket, cmd_args);
             }
         }
 
-        int Dispatch(tcp::socket& ctl_socket, tcp::socket& data_socket, std::vector<std::string>& cmd_args) {
+        bool Dispatch(tcp::socket& ctl_socket, tcp::socket& data_socket, std::vector<std::string>& cmd_args) {
             CMD cmd_code = ResolveCMD(cmd_args[0]);
+            boost::system::error_code ec;
             string res;
             switch (cmd_code) {
                 /* normal cmd */
                 case CWD: {
                     current_dir_ = cmd_args[1];
                     res = "250 Directory successfully changed.\r\n";
-                    ctl_socket.write_some(buffer(res));
+                    ctl_socket.write_some(buffer(res), ec);
                     break;
                           } 
                 case HELP: {
@@ -115,64 +128,50 @@ class FTPServer {
                     res += "MODE NLST NOOP PASS PASV PORT PWD QUIT RETR\r\n";
                     res += "SITE SIZE SMNT STAT STOR STRU SYST TYPE USER\r\n";
                     res += "214 Help okay\r\n";
-                    ctl_socket.write_some(buffer(res));
+                    ctl_socket.write_some(buffer(res), ec);
                     break;
                            }
                 case LIST: {
                     if (data_socket.is_open()) {
                         res = "150 Here comes the directory listing.\r\n";
-                        ctl_socket.write_some(buffer(res));
-                        std::for_each(directory_iterator(current_dir_),
+                        path file_path = root_dir_;
+                        file_path /= cmd_args[1];
+                        ctl_socket.write_some(buffer(res), ec);
+                        std::for_each(directory_iterator(file_path),
                                       directory_iterator(),
                                       [&](auto& entry) {
-                                        data_socket.write_some(buffer(make_file_info(entry) + "\r\n"));
+                                        data_socket.write_some(buffer(make_file_info(entry) + "\r\n"), ec);
                                       });
                         res = "226 Directory send OK.\r\n";
                     } else {
                         res = "425 Use PORT or PASV first.\r\n";
                     }
-                    ctl_socket.write_some(buffer(res));
-                           }
-                case MODE:
-                    // todo
-                case NLST:
-                    // todo
-                case NOOP: {
-                    res = "200 NOOP okay.\r\n";
-                    ctl_socket.write_some(buffer(res));
+                    ctl_socket.write_some(buffer(res), ec);
                     break;
                            }
-                case PASV: {
-                    res = "227 Entering passive mode(";
-                    int remote_port = rand() % 65536;
-                    string address = ctl_socket.remote_endpoint().address().to_string();
-                    std::replace(address.begin(), address.end(), '.', ',');
-                    res += address + "," +
-                        std::to_string(remote_port / 256) + "," + 
-                        std::to_string(remote_port % 256) + ").\r\n";
-                    ctl_socket.write_some(buffer(res));
+                case NOOP: {
+                    res = "200 NOOP okay.\r\n";
+                    ctl_socket.write_some(buffer(res), ec);
                     break;
                            }
                 case PASS: {
                     res = "230 User logged in successfully.\r\n";
-                    ctl_socket.write_some(buffer(res));
+                    ctl_socket.write_some(buffer(res), ec);
                     break;
                            }
                 case USER: {
                     res = "331 Please specify the password.\r\n";
-                    ctl_socket.write_some(buffer(res));
+                    ctl_socket.write_some(buffer(res), ec);
                     break;
                            }
                 case PWD: {
                     res += "257 ";
                     res += current_dir_.string();
                     res += "\r\n";
-                    ctl_socket.write_some(buffer(res));
+                    ctl_socket.write_some(buffer(res), ec);
                     break;
                           }
                 case RETR: {
-                    //res = "150 Opening BINARY mode data connection for file.\r\n";
-                    //ctl_socket.write_some(buffer(res));
                     char buff[1024];
                     path file_path = root_dir_;
                     file_path /= cmd_args[1];
@@ -180,28 +179,28 @@ class FTPServer {
                     // exists or not?
                     if (exists(file_path)) {
                         res = "150 Opening BINARY mode data conenction for file.\r\n";
-                        ctl_socket.write_some(buffer(res));
+                        ctl_socket.write_some(buffer(res), ec);
                         FILE* file = fopen(file_path.c_str(), "r");
                         size_t len;
                         size_t transfer_cnt(0);
                         
-                        while ((len = fread(buff, 1024, 1, file))) {
+                        while (!feof(file)) {
+                            len = fread(buff, 1, 1024, file);
                             transfer_cnt += len;
-                            write(data_socket, buffer(buff, len));
+                            write(data_socket, buffer(buff, len), ec);
                         }
                         fclose(file);
+                        data_socket.close();
                         res = "226 Transfer complete";
                         res += string("(") + std::to_string(transfer_cnt) + "bytes transfered).\r\n";
                     } else {
                         res = "550 File not exists.\r\n";
                     }
-                    ctl_socket.write_some(buffer(res));
+                    ctl_socket.write_some(buffer(res), ec);
                     break;
                            }
-                case STRU:
-                    // todo
                 case SYST: 
-                    ctl_socket.write_some(buffer("215 UNIX Type.\r\n"));
+                    ctl_socket.write_some(buffer("215 UNIX Type.\r\n"), ec);
                     break;
                 case TYPE: {
                     if (cmd_args[1] == "I") {
@@ -209,11 +208,10 @@ class FTPServer {
                     } else {
                         res = "504 Command not implemented for the parameter.\r\n";
                     }
-                    ctl_socket.write_some(buffer(res));
+                    ctl_socket.write_some(buffer(res), ec);
                     break;
                            }
                 case PORT: {
-                    boost::system::error_code ec;
                     auto args = Split(cmd_args[1], ',');
                     string address;
                     for (int i = 0; i < 4; i++)
@@ -228,28 +226,33 @@ class FTPServer {
                     } else {
                         res = "200 PORT command successful.\r\n";
                     }
-                    ctl_socket.write_some(buffer(res));
+                    ctl_socket.write_some(buffer(res), ec);
                     break;
                            }
                 case QUIT: {
                     res = "221 Goodbye.\r\n";
-                    ctl_socket.write_some(buffer(res));
-                    return 1;
+                    ctl_socket.write_some(buffer(res), ec);
+                    return false;
                            }
                 
                 /* unsupported cmd */
+                case STRU:
+                case MODE:
+                case PASV:
+                case NLST:
                 case DELE:
                 case MKD:
                 case RMD:
                 case STOR: {
-                    ctl_socket.write_some(buffer("502 Command not implemented.\r\n"));
+                    ctl_socket.write_some(buffer("502 Command not implemented.\r\n"), ec);
                     break;
                            }
                 /* illegal cmd */
                 default:
-                    ctl_socket.write_some(buffer("500 Syntax error, command unrecognized.\r\n"));
+                    ctl_socket.write_some(buffer("500 Syntax error, command unrecognized.\r\n"), ec);
             }
-            return 0;
+            if (ec) return false;
+            return true;
         }
 
         void OpenDataConnection(int port) {

@@ -6,9 +6,11 @@
 #include <ctime>
 
 #include <boost/filesystem.hpp>
+#include <boost/asio.hpp>
 
 namespace ftp {
 using namespace boost::filesystem;
+using namespace boost::asio;
 
 std::vector<std::string>
 Split(std::string str, char delimiter) {
@@ -58,5 +60,32 @@ make_file_info(const directory_entry& entry) {
 path relative(const path& p, const path& base) {
     assert(p.is_absolute() && base.is_absolute());
     return p.string().substr(base.string().length());
+}
+
+std::string ReadLine(ip::tcp::socket& socket, 
+                     boost::system::error_code& ec) {
+    streambuf buff;
+    std::istream is(&buff);
+    std::string line;
+
+    read_until(socket, buff, "\r\n", ec);
+    std::getline(is, line, '\r');
+
+    return line;
+}
+
+std::string ReadLine(ip::tcp::socket& socket) {
+    streambuf buff;
+    std::istream is(&buff);
+    std::string line;
+
+    read_until(socket, buff, "\r\n");
+    std::getline(is, line, '\r');
+
+    return line;
+}
+
+void WriteLine(ip::tcp::socket& socket, const std::string& str) {
+    socket.write_some(buffer(str + "\r\n"));
 }
 }

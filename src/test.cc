@@ -75,8 +75,12 @@ bool TestSplit() {
     return true;
 }
 
-template<typename UnaryPred>
-void Request(const string& req, UnaryPred predicate) {    
+/**
+ * Short request. 
+ * Send a req sequence, and receive the response.
+ */
+template<typename Fn>
+void Request(const string& req, Fn callback) {    
     /* create server */
     StartServer();
 
@@ -85,6 +89,7 @@ void Request(const string& req, UnaryPred predicate) {
     ip::tcp::endpoint ep(ip::address::from_string("127.0.0.1"), 8080);
     ip::tcp::socket socket(ios);
     socket.connect(ep);
+
     streambuf buff;
     std::istream is(&buff);
     std::string line;
@@ -92,7 +97,23 @@ void Request(const string& req, UnaryPred predicate) {
     socket.write_some(buffer(req));
     read_until(socket, buff, "\r\n");
     std::getline(is, line, '\r');
-    predicate(line);
+    callback(line);
+    
+    socket.write_some(buffer("QUIT\r\n"));
+}
+
+/* Long request */
+template<typename Fn>
+void Request(Fn callback) {
+    StartServer();
+
+    io_service ios;
+    ip::tcp::endpoint ep(ip::address::from_string("127.0.0.1"), 8080);
+    ip::tcp::socket socket(ios);
+    socket.connect(ep);
+    
+    callback(socket);
+    socket.write_some(buffer("QUIT\r\n"));
 }
 
 template<typename Fn>
@@ -100,12 +121,16 @@ void Receive(ip::tcp::endpoint& ep, Fn fn) {
     StartServer();    
     
     std::thread anon([&]() {
-        io_service ios;
-        ip::tcp::acceptor acceptor(ios, ep);
-        ip::tcp::socket socket(ios);
-        
-        acceptor.accept(socket);
-        fn(socket);
+        try {
+            io_service ios;
+            ip::tcp::acceptor acceptor(ios, ep);
+            ip::tcp::socket socket(ios);
+            acceptor.accept(socket);
+            fn(socket);
+            acceptor.close();
+        } catch (std::exception& e) {
+            printf("line %d: %s\n", __LINE__, e.what());
+        }
     });
     anon.detach();
 }
@@ -119,6 +144,7 @@ bool TestSignin() {
         assert(StatusCode(res) == 230);
     });
     puts("pass-test: sign in");
+    
     return true;
 }
 
@@ -142,14 +168,17 @@ bool TestCWD() {
 
 bool TestPORT() {
     /* port 1025 */
-    
+    /* Nobody listening at 1025, so this request will fail. */
     Request("PORT 127,0,0,1,4,1\r\n", [](auto& res) {
         assert(StatusCode(res) == 425);
     });
+
+    /* set a listener at 1025, then send request. */
     ip::tcp::endpoint ep(ip::tcp::v4(), 1025);
     Receive(ep, [](auto& socket) {
         assert(socket.remote_endpoint().address().to_string() == "127.0.0.1");
     });
+
     Request("PORT 127,0,0,1,4,1\r\n", [](auto& res) {
         assert(StatusCode(res) == 200);
     });
@@ -164,29 +193,54 @@ bool TestFileInfo() {
 }
 
 bool TestLIST() {
-    Request("PORT 127,0,0,1,4,1", [](auto& res){});
     ip::tcp::endpoint ep(ip::tcp::v4(), 1025);
     Receive(ep, [](auto& socket) {
         boost::system::error_code ec;
         while (!ec) {
-            streambuf buff;
-            std::istream is(&buff);
-            std::string line;
-            
-            read_until(socket, buff, "\r\n", ec);
-            std::getline(is, line, '\r');
-            std::cout << line << '\n';
+            std::string res = ReadLine(socket, ec);
+            std::cout << res << std::endl;
         }
     });
-    Request("LIST /\r\n", [](auto& res) {
-        assert(StatusCode(res) == 150);
+
+    Request([](auto& socket){
+        WriteLine(socket, "PORT 127,0,0,1,4,1");
+        assert(StatusCode(ReadLine(socket)) == 200);
+
+        WriteLine(socket, "LIST /");
+        
+        assert(StatusCode(ReadLine(socket)) == 150);
+        assert(StatusCode(ReadLine(socket)) == 226);
     });
+
     puts("pass-test: list");
     return true;
 }
 
 bool TestRETR() {
-    // todo
+    ip::tcp::endpoint ep(ip::tcp::v4(), 1025);
+    Receive(ep, [](auto& socket) {
+        puts("content of test.cc");
+        FILE* file = fopen("/tmp/ftp-test.dat", "w+");
+        char buff[128];
+        size_t len;
+        boost::system::error_code ec;
+        
+        while (!ec) {
+            len = socket.read_some(buffer(buff, 128), ec);
+            fwrite(buff, 1, len, file);
+            fwrite(buff, 1, len, stdout);
+        }
+        fclose(file);
+    });
+
+    Request([](auto& socket) {
+        WriteLine(socket, "PORT 127,0,0,1,4,1");
+        assert(StatusCode(ReadLine(socket)) == 200);
+
+        WriteLine(socket, "RETR /test.cc");
+        assert(StatusCode(ReadLine(socket)) == 150);
+        assert(StatusCode(ReadLine(socket)) == 226);
+    });
     puts("pass-tes: retr");
     return true;
 }
@@ -203,7 +257,7 @@ int main()
     assert(TestPORT());
     assert(TestFileInfo());
     assert(TestLIST());
-    //assert(TestRETR());
+    assert(TestRETR());
     puts("pass all test!");
     return 0;
 }
