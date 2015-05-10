@@ -75,33 +75,6 @@ bool TestSplit() {
     return true;
 }
 
-/**
- * Short request. 
- * Send a req sequence, and receive the response.
- */
-template<typename Fn>
-void Request(const string& req, Fn callback) {    
-    /* create server */
-    StartServer();
-
-    /* create client */
-    io_service ios;
-    ip::tcp::endpoint ep(ip::address::from_string("127.0.0.1"), 8080);
-    ip::tcp::socket socket(ios);
-    socket.connect(ep);
-
-    streambuf buff;
-    std::istream is(&buff);
-    std::string line;
-
-    socket.write_some(buffer(req));
-    read_until(socket, buff, "\r\n");
-    std::getline(is, line, '\r');
-    callback(line);
-    
-    socket.write_some(buffer("QUIT\r\n"));
-}
-
 /* Long request */
 template<typename Fn>
 void Request(Fn callback) {
@@ -112,9 +85,22 @@ void Request(Fn callback) {
     ip::tcp::socket socket(ios);
     socket.connect(ep);
     
+    assert(StatusCode(ReadLine(socket)) == 220);
     callback(socket);
     socket.write_some(buffer("QUIT\r\n"));
 }
+
+/**
+ * Short request. 
+ * Send a req sequence, and receive the response.
+ */
+template<typename Fn>
+void Request(const string& req, Fn callback) {    
+    Request([&](auto& socket) {
+        WriteLine(socket, req);
+    });
+}
+
 
 template<typename Fn>
 void Receive(ip::tcp::endpoint& ep, Fn fn) {
@@ -125,32 +111,31 @@ void Receive(ip::tcp::endpoint& ep, Fn fn) {
             io_service ios;
             ip::tcp::acceptor acceptor(ios, ep);
             ip::tcp::socket socket(ios);
+
             acceptor.accept(socket);
             fn(socket);
             acceptor.close();
         } catch (std::exception& e) {
-            printf("line %d: %s\n", __LINE__, e.what());
+            printf("file: %s line %d: %s\n", __FILE__,  __LINE__, e.what());
         }
     });
     anon.detach();
 }
 
 bool TestSignin() {
-    Request("USER ming\r\n", [](auto& res) {
-        assert(StatusCode(res) == 331);
+    Request("USER ming\r\n", [](auto& socket) {
+        assert(StatusCode(ReadLine(socket)) == 331);
     });
     
-    Request("PASS shit\r\n", [](auto& res) {
-        assert(StatusCode(res) == 230);
-    });
     puts("pass-test: sign in");
     
     return true;
 }
 
 bool TestPWD() {
-    Request("PWD\r\n", [](auto& res) {
-        assert(StatusCode(res) == 257);
+    Request("PWD\r\n", [](auto& socket) {
+        ReadLine(socket);
+        assert(StatusCode(ReadLine(socket)) == 257);
     });
     
     puts("pass-test: pwd");
@@ -158,8 +143,8 @@ bool TestPWD() {
 }
 
 bool TestCWD() {
-    Request("CWD /shit\r\n", [](auto& res) {
-        assert(StatusCode(res) == 250);
+    Request("CWD /shit\r\n", [](auto& socket) {
+        assert(StatusCode(ReadLine(socket)) == 250);
     });
 
     puts("pass-test: cwd");
@@ -169,8 +154,8 @@ bool TestCWD() {
 bool TestPORT() {
     /* port 1025 */
     /* Nobody listening at 1025, so this request will fail. */
-    Request("PORT 127,0,0,1,4,1\r\n", [](auto& res) {
-        assert(StatusCode(res) == 425);
+    Request("PORT 127,0,0,1,4,1\r\n", [](auto& socket) {
+        assert(StatusCode(ReadLine(socket)) == 425);
     });
 
     /* set a listener at 1025, then send request. */
@@ -179,8 +164,8 @@ bool TestPORT() {
         assert(socket.remote_endpoint().address().to_string() == "127.0.0.1");
     });
 
-    Request("PORT 127,0,0,1,4,1\r\n", [](auto& res) {
-        assert(StatusCode(res) == 200);
+    Request("PORT 127,0,0,1,4,1\r\n", [](auto& socket) {
+        assert(StatusCode(ReadLine(socket)) == 200);
     });
     puts("pass-test: port");
     return true;
@@ -193,7 +178,7 @@ bool TestFileInfo() {
 }
 
 bool TestLIST() {
-    ip::tcp::endpoint ep(ip::tcp::v4(), 1025);
+    ip::tcp::endpoint ep(ip::tcp::v4(), 1026);
     Receive(ep, [](auto& socket) {
         boost::system::error_code ec;
         while (!ec) {
@@ -203,7 +188,7 @@ bool TestLIST() {
     });
 
     Request([](auto& socket){
-        WriteLine(socket, "PORT 127,0,0,1,4,1");
+        WriteLine(socket, "PORT 127,0,0,1,4,2");
         assert(StatusCode(ReadLine(socket)) == 200);
 
         WriteLine(socket, "LIST /");
@@ -217,24 +202,24 @@ bool TestLIST() {
 }
 
 bool TestRETR() {
-    ip::tcp::endpoint ep(ip::tcp::v4(), 1025);
+    ip::tcp::endpoint ep(ip::tcp::v4(), 1027);
     Receive(ep, [](auto& socket) {
-        puts("content of test.cc");
-        FILE* file = fopen("/tmp/ftp-test.dat", "w+");
+        FILE* file = fopen("test.cc", "r");
         char buff[128];
+        char file_buff[128];
         size_t len;
         boost::system::error_code ec;
         
         while (!ec) {
             len = socket.read_some(buffer(buff, 128), ec);
-            fwrite(buff, 1, len, file);
-            fwrite(buff, 1, len, stdout);
+            fread(file_buff, 1, len, file);
+            assert(memcmp(buff, file_buff, len) == 0);
         }
         fclose(file);
     });
 
     Request([](auto& socket) {
-        WriteLine(socket, "PORT 127,0,0,1,4,1");
+        WriteLine(socket, "PORT 127,0,0,1,4,3");
         assert(StatusCode(ReadLine(socket)) == 200);
 
         WriteLine(socket, "RETR /test.cc");

@@ -54,8 +54,6 @@ class FTPServer {
 
         void Run() {
             logger_.Log("The server starting.", Logger::INFO);
-            error_code ec;
-            tcp::socket remote_socket(ios_);
             tcp::endpoint data_ep(tcp::v4(), data_port_);
             tcp::socket data_socket(ios_, data_ep);
 
@@ -71,15 +69,18 @@ class FTPServer {
 
             logger_.Log("The server started.", Logger::INFO);
             while (true) {
+                Reset();
                 try {
-                    acceptor_.accept(remote_socket, ec);
+                    tcp::socket remote_socket(ios_);
+
+                    acceptor_.accept(remote_socket);
                     HandleClient(remote_socket, data_socket);
                     remote_socket.close();
                     data_socket.close();
-                    Reset();
                 } catch (exception& e) {
-                    Error(e.what());
-                    remote_socket.close();
+                    char buff[128];
+                    sprintf(buff, "%s: line %d: %s", __FILE__, __LINE__, e.what());
+                    Error(buff);
                 }
             }
             logger_.Log("The server ended.", Logger::INFO);
@@ -92,23 +93,28 @@ class FTPServer {
         }
 
         void HandleClient(tcp::socket& ctl_socket, tcp::socket& data_socket) {
-            LogClientAction(ctl_socket, "sign in");
+            string address = ctl_socket.remote_endpoint().address().to_string();
+            LogClientAction(address + " sign in.");
 
             error_code ec;
             bool stat = true;
 
-            while (stat && ctl_socket.is_open() && !ec) {
-                streambuf buff;
-                std::istream is(&buff);
-                string line;
+            /* say hello */
+            Greet(ctl_socket);
 
-                read_until(ctl_socket, buff, "\r\n", ec);
-                std::getline(is, line, '\r');
+            /* read, resolve, response loop */
+            while (stat && ctl_socket.is_open() && !ec) {
+                string line = ReadLine(ctl_socket, ec);
 
                 auto cmd_args = Split(line, ' ');
-                LogClientAction(ctl_socket, line);
+                LogClientAction(address + " " + line);
                 stat = Dispatch(ctl_socket, data_socket, cmd_args);
             }
+            LogClientAction(address + " sign out.");
+        }
+
+        void Greet(tcp::socket& socket) {
+            socket.write_some(buffer("220 Hello\r\n"));
         }
 
         bool Dispatch(tcp::socket& ctl_socket, tcp::socket& data_socket, std::vector<std::string>& cmd_args) {
@@ -191,7 +197,8 @@ class FTPServer {
                             write(data_socket, buffer(buff, len), ec);
                         }
                         fclose(file);
-                        data_socket.close();
+                        if (data_socket.is_open())
+                            data_socket.close();
                         res = "226 Transfer complete";
                         res += string("(") + std::to_string(transfer_cnt) + "bytes transfered).\r\n";
                     } else {
@@ -256,15 +263,8 @@ class FTPServer {
             return true;
         }
 
-        void OpenDataConnection(int port) {
-            tcp::endpoint data_ep(ip::tcp::v4(), port);
-            
-        }
-
-        void LogClientAction(tcp::socket& socket, const string& msg) {
-            ip::address address = socket.remote_endpoint().address();
-            string info = address.to_string() + ": " + msg;
-            logger_.Log(info, Logger::INFO);
+        void LogClientAction(const string& msg) {
+            logger_.Log(msg, Logger::INFO);
         }
 
 
@@ -272,12 +272,16 @@ class FTPServer {
             logger_.Log(msg, Logger::ERROR);
         }
 
+        /* members */
+        /* logger and path */
         const char* log_path_ = "./ftpd.log";
         Logger logger_{ log_path_ };
+        const path root_dir_ = current_path();
+        path current_dir_;
+
+        /* connection parameters */
         const unsigned short port_;
         const unsigned short data_port_;
-        const path root_dir_ = current_path();
-        path current_dir_ = "/";
         tcp::endpoint local_ep_{ tcp::v4(), port_ };
         io_service ios_{ };
         tcp::acceptor acceptor_{ ios_ };

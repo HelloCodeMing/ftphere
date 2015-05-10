@@ -12,6 +12,9 @@ namespace ftp {
 using namespace boost::filesystem;
 using namespace boost::asio;
 
+/**
+ * Split a string with delimiter.
+ */
 std::vector<std::string>
 Split(std::string str, char delimiter) {
     str += delimiter;
@@ -29,6 +32,10 @@ Split(std::string str, char delimiter) {
     return res;
 }
 
+/**
+ * Make file information degest.
+ * Like this "744 2015-12-19 12:13:14 ftphere"
+ */
 std::string
 make_file_info(const path& path) {
     char buff[5];
@@ -57,11 +64,17 @@ make_file_info(const directory_entry& entry) {
 }
 
 
+/**
+ * Computes the relative path based on the other path.
+ */
 path relative(const path& p, const path& base) {
     assert(p.is_absolute() && base.is_absolute());
     return p.string().substr(base.string().length());
 }
 
+/**
+ * Readline from a socket, using error_code.
+ */
 std::string ReadLine(ip::tcp::socket& socket, 
                      boost::system::error_code& ec) {
     streambuf buff;
@@ -74,6 +87,9 @@ std::string ReadLine(ip::tcp::socket& socket,
     return line;
 }
 
+/**
+ * Readline from a socket, which will throw exception.
+ */
 std::string ReadLine(ip::tcp::socket& socket) {
     streambuf buff;
     std::istream is(&buff);
@@ -85,6 +101,9 @@ std::string ReadLine(ip::tcp::socket& socket) {
     return line;
 }
 
+/**
+ * Writeline to a socket.
+ */
 void WriteLine(ip::tcp::socket& socket, const std::string& str) {
     socket.write_some(buffer(str + "\r\n"));
 }
