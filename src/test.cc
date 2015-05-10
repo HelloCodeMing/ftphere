@@ -24,11 +24,11 @@ void StartServer() {
     static bool started = false;
     if (started == false) {
         started = true;
-        std::thread server([=]() {
-                FTPServer s(8080, 8081);
-                s.Run();
-                });
-        server.detach();
+        std::thread anon([]{
+            FTPServer s(8080, 8081);
+            s.Run();
+        });
+        anon.detach();
         sleep(1);
     }
 }
@@ -39,6 +39,7 @@ bool TestLogger() {
     logger.Log("wow, amazing", Logger::INFO);
     logger.Log("oh, no");
     logger.Log("oh, shit", Logger::ERROR);
+    remove(log_path);
     puts("pass-test: logger");
     return true;
 }
@@ -75,7 +76,9 @@ bool TestSplit() {
     return true;
 }
 
-/* Long request */
+/**
+ * Callback with a socket.
+ */
 template<typename Fn>
 void Request(Fn callback) {
     StartServer();
@@ -91,8 +94,7 @@ void Request(Fn callback) {
 }
 
 /**
- * Short request. 
- * Send a req sequence, and receive the response.
+ * Launch a request with a string.
  */
 template<typename Fn>
 void Request(const string& req, Fn callback) {    
@@ -101,7 +103,9 @@ void Request(const string& req, Fn callback) {
     });
 }
 
-
+/**
+ * Create a listener at specific port, and forward the socket to callback.
+ */
 template<typename Fn>
 void Receive(ip::tcp::endpoint& ep, Fn fn) {
     StartServer();    
@@ -153,7 +157,7 @@ bool TestCWD() {
 
 bool TestPORT() {
     /* port 1025 */
-    /* Nobody listening at 1025, so this request will fail. */
+    /* Nobody listening at 1025, so this request will fail with a 425 response.*/
     Request("PORT 127,0,0,1,4,1\r\n", [](auto& socket) {
         assert(StatusCode(ReadLine(socket)) == 425);
     });
