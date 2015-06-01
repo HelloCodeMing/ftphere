@@ -1,5 +1,3 @@
-#define FTPHERE_HPP
-
 #include "ftp_server.hpp"
 
 using namespace boost::asio;

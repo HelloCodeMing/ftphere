@@ -3,6 +3,7 @@
  * A simple logger for the ftp server
  */
 
+#ifndef LOGGER_HPP
 #define LOGGER_HPP
 
 #include <ctime>
@@ -63,4 +64,5 @@ class Logger {
         const char* log_path_;
         FILE* log_file_;
 };
-}
+} // end of namespace ftp
+#endif 

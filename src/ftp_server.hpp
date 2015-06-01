@@ -4,6 +4,7 @@
  * It could be used to transport files conveniently.
  */
 
+#ifndef FTPSERVER_HPP
 #define FTPSERVER_HPP
 
 #include <iostream>
@@ -14,20 +15,9 @@
 #include <boost/asio.hpp>
 #include <boost/filesystem.hpp>
 
-#ifndef LOGGER_HPP
-#define LOGGER_HPP
 #include "logger.hpp"
-#endif
-
-#ifndef CMD_HPP
-#define CMD_HPP
 #include "cmd.hpp"
-#endif
-
-#ifndef UTIL_HPP
-#define UTIL_HPP
 #include "util.hpp"
-#endif
 
 namespace ftp {
 
@@ -286,4 +276,5 @@ class FTPServer {
         io_service ios_{ };
         tcp::acceptor acceptor_{ ios_ };
 };
-}
+} //end of namespace ftp
+#endif

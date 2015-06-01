@@ -14,7 +14,7 @@ debug-test: test.cc ftp_server.hpp
 	$(DEBUGCPP) -o test -g $(CPPFLAGS) test.cc
 
 test: test.cc ftp_server.hpp
-	$(CPP) -g $(CPPFLAGS) -o test test.cc 
+	$(CPP) $(CPPFLAGS) -o test test.cc 
 	./test
 
 clean:

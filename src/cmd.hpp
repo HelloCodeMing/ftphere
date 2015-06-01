@@ -1,3 +1,4 @@
+#ifndef CMD_HPP
 #define CMD_HPP
 
 #include <unordered_map>
@@ -114,4 +115,5 @@ std::string Response(int code) {
     assert(false);
 }
 
-}
+}// end of namespace ftp
+#endif

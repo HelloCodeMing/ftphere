@@ -1,3 +1,4 @@
+#ifndef UTIL_HPP
 #define UTIL_HPP
 
 #include <string>
@@ -107,4 +108,5 @@ std::string ReadLine(ip::tcp::socket& socket) {
 void WriteLine(ip::tcp::socket& socket, const std::string& str) {
     socket.write_some(buffer(str + "\r\n"));
 }
-}
+}//end of namesapce ftp
+#endif
